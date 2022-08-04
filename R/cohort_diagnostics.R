@@ -309,11 +309,8 @@ tar_cohort_time_series <- function(cohortsToCreate,
 #######################################
 
 #utils
-define_cohort_windows <- function(targetCohortId, comparatorCohortIds) {
-  cohortWindow <-  list(
-    targetCohortId = targetCohortId,
-    comparatorCohortIds = comparatorCohortIds,
-    relationshipDays = tibble::tibble(
+define_cohort_windows <- function() {
+  cohortWindow = tibble::tibble(
     temporalStartDays = c(
       # components displayed in cohort characterization
       -9999, # anytime prior
@@ -343,7 +340,7 @@ define_cohort_windows <- function(targetCohortId, comparatorCohortIds) {
       365,
       9999 # Any time prior to any time future
     )
-  ))
+  )
   return(cohortWindow)
   
 }
@@ -375,7 +372,7 @@ cohort_diagnostics_cohort_relationship <- function(connectionDetails,
   comparatorCohortIds <- purrr::map_dbl(comparatorGeneratedCohorts, ~.x$cohort_id) %>%
     as.integer()
  
-  relationshipDays <- cohortWindowSettings$relationshipDays
+  relationshipDays <- cohortWindowSettings
   
   cohortRelationship <- CohortDiagnostics::runCohortRelationshipDiagnostics(
     connectionDetails = connectionDetails,
@@ -399,7 +396,6 @@ cohort_diagnostics_cohort_relationship <- function(connectionDetails,
 #' @param cohortsToCreate a dataframe with the cohorts to create
 #' @param cohortWindowSettings a list of settings for cohort relationship analysis
 #' @param executionSettings An object containing all information of the database connection created from config file
-#' @importFrom rlang !!!
 #' @export
 tar_cohort_relationship <- function(cohortsToCreate,
                                  cohortWindowSettings,
@@ -411,45 +407,34 @@ tar_cohort_relationship <- function(cohortsToCreate,
   vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
   databaseId <- executionSettings$databaseId
   studyName <- executionSettings$studyName
-  targetCohortId <- cohortWindowSettings$targetCohortId
-  comparatorCohortIds <- cohortWindowSettings$comparatorCohortIds
-  
+
   nn <- 1:nrow(cohortsToCreate)
-  
-  generatedCohortsList <- rlang::syms(paste("generatedCohort", comparatorCohortIds, sep ="_")) %>%
-    rlang::call2("list", !!!.)
-  
-  generatedTargetCohort <- rlang::sym(paste("generatedCohort", targetCohortId, sep ="_"))
-  
+  `%notin%` <- Negate("%in%")
+  comparatorCohortIds <- purrr::map(nn, ~nn[nn %notin% .x]) %>%
+    purrr::map(~rlang::syms(paste("generatedCohort", .x, sep ="_"))) 
+    
   
   
+  iter <- tibble::tibble(
+    'targetGeneratedCohort' = rlang::syms(paste("targetGeneratedCohort", nn, sep ="_")),
+    'comparatorGeneratedCohorts' = comparatorCohortIds,
+    'cohortId' = nn)
   
   list(
-    targets::tar_target_raw("treatment_history",
-                            substitute(
-                              create_treatment_history(
-                                connectionDetails = connectionDetails,
-                                cdmDatabaseSchema = cdmDatabaseSchema,
-                                analysisSettings = drugUtilizationSettings,
-                                generatedCohort = generatedCohortsList)
-                            )
-    ),
-    targets::tar_target_raw("treatment_patterns",
-                            substitute(
-                              create_treatment_patterns(
-                                treatment_history = treatment_history,
-                                analysisSettings = drugUtilizationSettings
-                              )
-                            )),
-    targets::tar_target_raw("time_to_discontinuation",
-                            substitute(
-                              create_survival_table(treatment_history = treatment_history,
-                                                    connectionDetails = connectionDetails,
-                                                    generatedTargetCohort = generatedTargetCohort,
-                                                    analysisSettings = drugUtilizationSettings)
-                            ))
+    tarchetypes::tar_map(values = iter, 
+                         names = "cohortId",
+                         tar_target_raw("cohortRelationship", 
+                                        substitute(
+                                          cohort_diagnostics_cohort_relationship(
+                                            connectionDetails = connectionDetails,
+                                            cdmDatabaseSchema = cdmDatabaseSchema,
+                                            targetGeneratedCohort = targetGeneratedCohort,
+                                            comparatorGeneratedCohorts = comparatorGeneratedCohorts,
+                                            cohortWindowSettings = cohortWindowSettings)
+                                        )
+                         )
+    )
   )
-  
   
   
 }
