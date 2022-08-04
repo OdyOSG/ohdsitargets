@@ -309,8 +309,33 @@ tar_cohort_time_series <- function(cohortsToCreate,
 #######################################
 
 #utils
-define_cohort_windows <- function() {
-  cohortWindow = tibble::tibble(
+define_temporal_covariates <- function() {
+  temporalCovariates <-  FeatureExtraction::createTemporalCovariateSettings(
+    useDemographicsGender = TRUE,
+    useDemographicsAge = TRUE,
+    useDemographicsAgeGroup = TRUE,
+    useDemographicsRace = TRUE,
+    useDemographicsEthnicity = TRUE,
+    useDemographicsIndexYear = TRUE,
+    useDemographicsIndexMonth = TRUE,
+    useDemographicsIndexYearMonth = TRUE,
+    useDemographicsPriorObservationTime = TRUE,
+    useDemographicsPostObservationTime = TRUE,
+    useDemographicsTimeInCohort = TRUE,
+    useConditionOccurrence = TRUE,
+    useProcedureOccurrence = TRUE,
+    useDrugEraStart = TRUE,
+    useMeasurement = TRUE,
+    useConditionEraStart = TRUE,
+    useConditionEraOverlap = TRUE,
+    useConditionEraGroupOverlap = TRUE,
+    useDrugEraGroupOverlap = TRUE,
+    useObservation = TRUE,
+    useDeviceExposure = TRUE,
+    useCharlsonIndex = TRUE,
+    useDcsi = TRUE,
+    useChads2 = TRUE,
+    useChads2Vasc = TRUE,
     temporalStartDays = c(
       # components displayed in cohort characterization
       -9999, # anytime prior
@@ -341,7 +366,7 @@ define_cohort_windows <- function() {
       9999 # Any time prior to any time future
     )
   )
-  return(cohortWindow)
+  return(temporalCovariates)
   
 }
 
@@ -349,8 +374,6 @@ define_cohort_windows <- function() {
 #function
 
 #' cohort relationship analysis for cohort diagnostics
-#' 
-#' Time series stratified by age group and gender in cohort diagnostics
 #'
 #' @param connectionDetails ConnectionDetails
 #' @param cdmDatabaseSchema (character) Schema where the CDM data lives in the database
@@ -362,17 +385,20 @@ cohort_diagnostics_cohort_relationship <- function(connectionDetails,
                                                    cdmDatabaseSchema = config::get("cdmDatabaseSchema"),
                                                    targetGeneratedCohort,
                                                    comparatorGeneratedCohorts,
-                                                   cohortWindowSettings) {
+                                                   temporalCovariateSettings) {
   
-  cohortDatabaseSchema <- generatedCohort$cohortTableRef$cohortDatabaseSchema
-  cohortTable <- generatedCohort$cohortTableRef$cohortTableNames$cohortTable
+  cohortDatabaseSchema <- targetGeneratedCohort$cohortTableRef$cohortDatabaseSchema
+  cohortTable <- targetGeneratedCohort$cohortTableRef$cohortTableNames$cohortTable
   
   #TODO error logic if target and comparator cohort ids dont match
   targetCohortId <- targetGeneratedCohort$cohort_id
   comparatorCohortIds <- purrr::map_dbl(comparatorGeneratedCohorts, ~.x$cohort_id) %>%
     as.integer()
  
-  relationshipDays <- cohortWindowSettings
+  relationshipDays <- tibble::tibble(
+    startDay = temporalCovariateSettings$temporalStartDays,
+    endDay = temporalCovariateSettings$temporalEndDays
+  )
   
   cohortRelationship <- CohortDiagnostics::runCohortRelationshipDiagnostics(
     connectionDetails = connectionDetails,
@@ -394,11 +420,11 @@ cohort_diagnostics_cohort_relationship <- function(connectionDetails,
 #' This is the target factory for the cohort relationships in cohort diagnostics
 #'
 #' @param cohortsToCreate a dataframe with the cohorts to create
-#' @param cohortWindowSettings a list of settings for cohort relationship analysis
+#' @param temporalCovariateSettings a list of settings for cohort relationship analysis
 #' @param executionSettings An object containing all information of the database connection created from config file
 #' @export
 tar_cohort_relationship <- function(cohortsToCreate,
-                                 cohortWindowSettings,
+                                    temporalCovariateSettings,
                                  executionSettings) {
   
   #extract out all execution settings
@@ -430,7 +456,7 @@ tar_cohort_relationship <- function(cohortsToCreate,
                                             cdmDatabaseSchema = cdmDatabaseSchema,
                                             targetGeneratedCohort = targetGeneratedCohort,
                                             comparatorGeneratedCohorts = comparatorGeneratedCohorts,
-                                            cohortWindowSettings = cohortWindowSettings)
+                                            temporalCovariateSettings = temporalCovariateSettings)
                                         )
                          )
     )
@@ -439,6 +465,90 @@ tar_cohort_relationship <- function(cohortsToCreate,
   
 }
 
+##########################################
+#Temporal COhort Characterization---------
+##########################################
+
+#function
+
+#' Temporal cohort characterization analysis for cohort diagnostics
+#'
+#' @param connectionDetails ConnectionDetails
+#' @param cdmDatabaseSchema (character) Schema where the CDM data lives in the database
+#' @param tempEmulationSchema the temporary table schema used in certain databases
+#' @param generatedCohort dependency object of generated cohort class that tracks cohort used in incidence
+#' analysis
+#' @param temporalCovariateSettings temporal covariate settings used for analysis
+#' @export
+cohort_diagnostics_temporal_characterization <- function(connectionDetails,
+                                                   cdmDatabaseSchema = config::get("cdmDatabaseSchema"),
+                                                   tempEmulationSchema = getOption("sqlRenderTempEmulationSchema"),
+                                                   generatedCohort,
+                                                   temporalCovariateSettings) {
+  
+  cohortDatabaseSchema <- generatedCohort$cohortTableRef$cohortDatabaseSchema
+  cohortTable <- generatedCohort$cohortTableRef$cohortTableNames$cohortTable
+  cohortId <- generatedCohort$cohort_id
+  
+  
+  
+  characteristics <- CohortDiagnostics:::getCohortCharacteristics(
+    connectionDetails = connectionDetails,
+    cdmDatabaseSchema = cdmDatabaseSchema,
+    tempEmulationSchema = tempEmulationSchema,
+    cohortDatabaseSchema = cohortDatabaseSchema,
+    cohortTable = cohortTable,
+    cohortIds = cohortId,
+    covariateSettings = temporalCovariateSettings,
+    cdmVersion = 5L
+  )
+  
+  return(characteristics)
+}
+
+
+
+
+#' This is the target factory for the cohort relationships in cohort diagnostics
+#'
+#' @param cohortsToCreate a dataframe with the cohorts to create
+#' @param temporalCovariateSettings a list of settings for cohort relationship analysis
+#' @param executionSettings An object containing all information of the database connection created from config file
+#' @export
+tar_temporal_cohort_characterization <- function(cohortsToCreate,
+                                                 temporalCovariateSettings,
+                                                 executionSettings) {
+  
+  #extract out all execution settings
+  connectionDetails <- executionSettings$connectionDetails
+  cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
+  vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
+  databaseId <- executionSettings$databaseId
+  
+  
+  nn <- 1:nrow(cohortsToCreate)
+  
+  iter <- tibble::tibble('generatedCohort' = rlang::syms(paste("generatedCohort", nn, sep ="_")),
+                         'cohortId' = nn)
+  
+  
+  list(
+    tarchetypes::tar_map(values = iter, 
+                         names = "cohortId",
+                         tar_target_raw("cohortTemporalCharacterization", 
+                                        substitute(
+                                          cohort_diagnostics_temporal_characterization(
+                                            connectionDetails = connectionDetails,
+                                            cdmDatabaseSchema = cdmDatabaseSchema,
+                                            tempEmulationSchema = tempEmulationSchema,
+                                            generatedCohort = generatedCohort,
+                                            temporalCovariateSettings = temporalCovariateSettings)
+                                        )
+                         )
+    )
+  )
+  
+}
 
 
 # tar_cohort_diagnostics <- function(cohortsToCreate,
