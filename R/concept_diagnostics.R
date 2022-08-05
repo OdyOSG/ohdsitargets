@@ -1,38 +1,66 @@
 #concept set diagnostics
 
 
-# initialize_concept_table <- function(connectionDetails,
-#                                      tempEmulationSchema = getOption("sqlRenderTempEmulationSchema"),
-#                                      resultsDatabaseSchema,
-#                                      studyName) {
-#   #connect to database
-#   connection <- DatabaseConnector::connect(connectionDetails = connectionDetails)
-#   on.exit(DatabaseConnector::disconnect(connection))
-#   
-#   sql <-
-#     SqlRender::loadRenderTranslateSql(
-#       "CreateConceptIdTable.sql",
-#       packageName = "CohortDiagnostics",
-#       dbms = connection@dbms,
-#       tempEmulationSchema = tempEmulationSchema,
-#       table_name = paste0(resultsDatabaseSchema, ".concept_ids", "_", studyName)
-#     )
-#   DatabaseConnector::executeSql(
-#     connection = connection,
-#     sql = sql,
-#     progressBar = FALSE,
-#     reportOverallTime = FALSE
-#   )
-#   
-#   concept_ref <- structure(list(resultsDatabaseSchema = resultsDatabaseSchema, 
-#                                 conceptIdTable = conceptIdTable, 
-#                                 createdTimestamp = Sys.time()), 
-#                            class = "conceptTableRef")
-#   return(concept_ref)
-#   
-# }
+runConceptSetDiagnostics <- function(connectionDetails,
+                                     cdmDatabaseSchema,
+                                     vocabularyDatabaseSchema,
+                                     tempEmulationSchema = NULL,
+                                     generatedCohorts,
+                                     minCellCount = 5L,
+                                     databaseId,
+                                     studyName) {
+  
+  suppressMessages(connection <- DatabaseConnector::connect(connectionDetails))
+  on.exit(DatabaseConnector::disconnect(connection), add = TRUE)
+  
+  concept_sets <- get_concept_sets(connection = connection,
+                                   cdmDatabaseSchema = cdmDatabaseSchema,
+                                   vocabularyDatabaseSchema = vocabularyDatabaseSchema,
+                                   tempEmulationSchema = tempEmulationSchema,
+                                   generatedCohorts = generatedCohorts)
+  
+  
+  included_source_concept <- concept_diagnostics_included_source_concepts(connection = connection,
+                                                                          concept_sets = concept_sets,
+                                                                          cdmDatabaseSchema = cdmDatabaseSchema,
+                                                                          tempEmulationSchema = tempEmulationSchema,
+                                                                          minCellCount = 5L,
+                                                                          databaseId = databaseId)
+  index_event_breakdown <- concept_diagnostics_index_event_breakdown(connection = connection,
+                                                                     concept_sets = concept_sets,
+                                                                     cdmDatabaseSchema = cdmDatabaseSchema,
+                                                                     tempEmulationSchema = tempEmulationSchema,
+                                                                     minCellCount = 5L,
+                                                                     databaseId = databaseId)
+  orphan_concepts <- concept_diagnostics_orphan_concepts(connection = connection,
+                                                         concept_sets = concept_sets,
+                                                         cdmDatabaseSchema = cdmDatabaseSchema,
+                                                         tempEmulationSchema = tempEmulationSchema,
+                                                         minCellCount = 5L,
+                                                         databaseId = databaseId,
+                                                         studyName = studyName)
+  
+  concept_set_diagnostics <- list(
+    included_source_concept = included_source_concept,
+    index_event_breakdown = index_event_breakdown,
+    orphan_concepts = orphan_concepts
+  )
+  
+  return(concept_set_diagnostics)
+  
+}
 
-get_unique_concepts <- function(generatedCohorts) {
+
+
+
+
+
+
+get_concept_sets <- function(connection,
+                                cdmDatabaseSchema,
+                                vocabularyDatabaseSchema,
+                                tempEmulationSchema = NULL,
+                                generatedCohorts) {
   #get concept sets
   conceptSets <- purrr::map(generatedCohorts, ~.x$cohort_definition) %>%
     Capr::createCohortDataframe() %>%
@@ -50,45 +78,29 @@ get_unique_concepts <- function(generatedCohorts) {
     cdmDatabaseSchema = cdmDatabaseSchema,
     vocabularyDatabaseSchema = vocabularyDatabaseSchema,
     tempEmulationSchema = tempEmulationSchema,
-    conceptSetsTable = "inst_concept_sets"
+    conceptSetsTable = "#inst_concept_sets"
+  )
+  
+  concept_sets <- list(
+    conceptSets = conceptSets,
+    uniqueConceptSets = uniqueConceptSets
   )
   
   
-  return(uniqueConceptSets)
+  return(concept_sets)
 }
 
 
-concept_diagnostics_included_source_concepts <- function(connectionDetails,
-                                                         generatedCohorts,
+concept_diagnostics_included_source_concepts <- function(connection,
+                                                         concept_sets,
                                                          cdmDatabaseSchema,
-                                                         vocabularyDatabaseSchmea,
                                                          tempEmulationSchema,
                                                          minCellCount = 5L,
                                                          databaseId) {
-  ##From Cohort Diagnostics ConceptSets.R Line 521:581
-  
-  connection <- DatabaseConnector::connect(connectionDetails = connectionDetails)
-  on.exit(DatabaseConnector::disconnect(connection))
-  
+
   #get concept sets
-  conceptSets <- purrr::map(generatedCohorts, ~.x$cohort_definition) %>%
-    Capr::createCohortDataframe() %>%
-    dplyr::select(cohortId, cohortName, json, sql) %>%
-    CohortDiagnostics:::combineConceptSetsFromCohorts()
+  conceptSets <- concept_sets$conceptSets
   
-  uniqueConceptSets <-
-    conceptSets[!duplicated(conceptSets$uniqueConceptSetId), ] %>%
-    dplyr::select(-.data$cohortId, -.data$conceptSetId)
-  
-  
-  CohortDiagnostics:::instantiateUniqueConceptSets(
-    uniqueConceptSets = uniqueConceptSets,
-    connection = connection,
-    cdmDatabaseSchema = cdmDatabaseSchema,
-    vocabularyDatabaseSchema = vocabularyDatabaseSchema,
-    tempEmulationSchema = tempEmulationSchema,
-    conceptSetsTable = "#inst_concept_sets"
-  )
   
   sql <- SqlRender::loadRenderTranslateSql(
     "CohortSourceCodes.sql",
@@ -109,9 +121,7 @@ concept_diagnostics_included_source_concepts <- function(connectionDetails,
       tempEmulationSchema = tempEmulationSchema,
       snakeCaseToCamelCase = TRUE
     ) %>%
-    tidyr::tibble()
-  
-  counts <- counts %>%
+    tidyr::tibble() %>%
     dplyr::rename(uniqueConceptSetId = .data$conceptSetId) %>%
     dplyr::inner_join(
       conceptSets %>% dplyr::select(
@@ -129,9 +139,7 @@ concept_diagnostics_included_source_concepts <- function(connectionDetails,
       .data$conceptSetId,
       .data$conceptId
     ) %>%
-    dplyr::distinct()
-  
-  counts <- counts %>%
+    dplyr::distinct() %>%
     dplyr::group_by(
       .data$databaseId,
       .data$cohortId,
@@ -167,33 +175,16 @@ concept_diagnostics_included_source_concepts <- function(connectionDetails,
 }
 
 
-
-concept_diagnostics_index_event_breakdown <- function(connectionDetails,
-                                                      generatedCohorts,
+# TODO add cohorts into this function
+concept_diagnostics_index_event_breakdown <- function(connection,
+                                                      concept_sets,
                                                       cdmDatabaseSchema,
                                                       vocabularyDatabaseSchmea,
                                                       tempEmulationSchema,
                                                       minCellCount = 5L,
                                                       databaseId) {
-  
-  connection <- DatabaseConnector::connect(connectionDetails = connectionDetails)
-  on.exit(DatabaseConnector::disconnect(connection))
-  
-  #get concept sets
-  conceptSets <- CohortDiagnostics:::combineConceptSetsFromCohorts(cohorts)
-  uniqueConceptSets <-
-    conceptSets[!duplicated(conceptSets$uniqueConceptSetId), ] %>%
-    dplyr::select(-.data$cohortId, -.data$conceptSetId)
-  
-  
-  CohortDiagnostics:::instantiateUniqueConceptSets(
-    uniqueConceptSets = uniqueConceptSets,
-    connection = connection,
-    cdmDatabaseSchema = cdmDatabaseSchema,
-    vocabularyDatabaseSchema = vocabularyDatabaseSchema,
-    tempEmulationSchema = tempEmulationSchema,
-    conceptSetsTable = "#inst_concept_sets"
-  )
+
+  conceptSets <- concept_sets$conceptSets
   
   domains <-
     readr::read_csv(
@@ -349,33 +340,16 @@ concept_diagnostics_index_event_breakdown <- function(connectionDetails,
   return(data_index_event)
 }
 
-concept_diagnostics_orphan_concepts <- function(connectionDetails,
-                                                generatedCohorts,
+concept_diagnostics_orphan_concepts <- function(connection,
+                                                concept_sets,
                                                 cdmDatabaseSchema,
                                                 tempEmulationSchema,
                                                 minCellCount = 5L,
-                                                databaseId) {
-  
-  #set connection
-  connection <- DatabaseConnector::connect(connectionDetails = connectionDetails)
-  on.exit(DatabaseConnector::disconnect(connection))
-  
-  #find unique concepts
-  conceptSets <- CohortDiagnostics:::combineConceptSetsFromCohorts(cohorts)
-  uniqueConceptSets <-
-    conceptSets[!duplicated(conceptSets$uniqueConceptSetId), ] %>%
-    dplyr::select(-.data$cohortId, -.data$conceptSetId)
-  
-  CohortDiagnostics:::instantiateUniqueConceptSets(
-    uniqueConceptSets = uniqueConceptSets,
-    connection = connection,
-    cdmDatabaseSchema = cdmDatabaseSchema,
-    vocabularyDatabaseSchema = vocabularyDatabaseSchema,
-    tempEmulationSchema = tempEmulationSchema,
-    conceptSetsTable = "#inst_concept_sets"
-  )
+                                                databaseId,
+                                                studyName) {
   
   
+  uniqueConceptSets <- concept_sets$uniqueConceptSets
   conceptCountsTable <- paste0("concept_counts", "_", studyName)
   
   #create concept counts table

@@ -21,3 +21,4 @@ inst/project_template/project_template.Rproj
 #only inst/project_template/config.yml should be pushed
 #part of project template
 ./config.yml 
+errorReportSql.txt
