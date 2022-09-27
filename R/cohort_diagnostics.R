@@ -274,7 +274,6 @@ tar_cohort_time_series <- function(cohortsToCreate,
   #extract out all execution settings
   connectionDetails <- executionSettings$connectionDetails
   cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
-  vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
   databaseId <- executionSettings$databaseId
   
   
@@ -292,7 +291,6 @@ tar_cohort_time_series <- function(cohortsToCreate,
                                           cohort_diagnostics_time_series(
                                             connectionDetails = connectionDetails,
                                             cdmDatabaseSchema = cdmDatabaseSchema,
-                                            vocabularyDatabaseSchema = vocabularyDatabaseSchema,
                                             generatedCohort = generatedCohort,
                                             observationPeriodRange = observationPeriodRange)
                                         )
@@ -308,7 +306,8 @@ tar_cohort_time_series <- function(cohortsToCreate,
 #cohort Relationship-------------------
 #######################################
 
-#utils
+#' Define temporal covariates. Gives default settings
+#' @export
 define_temporal_covariates <- function() {
   temporalCovariates <-  FeatureExtraction::createTemporalCovariateSettings(
     useDemographicsGender = TRUE,
@@ -425,12 +424,11 @@ cohort_diagnostics_cohort_relationship <- function(connectionDetails,
 #' @export
 tar_cohort_relationship <- function(cohortsToCreate,
                                     temporalCovariateSettings,
-                                 executionSettings) {
+                                    executionSettings) {
   
   #extract out all execution settings
   connectionDetails <- executionSettings$connectionDetails
   cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
-  vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
   databaseId <- executionSettings$databaseId
   studyName <- executionSettings$studyName
 
@@ -442,7 +440,7 @@ tar_cohort_relationship <- function(cohortsToCreate,
   
   
   iter <- tibble::tibble(
-    'targetGeneratedCohort' = rlang::syms(paste("targetGeneratedCohort", nn, sep ="_")),
+    'targetGeneratedCohort' = rlang::syms(paste("generatedCohort", nn, sep ="_")),
     'comparatorGeneratedCohorts' = comparatorCohortIds,
     'cohortId' = nn)
   
@@ -540,7 +538,6 @@ tar_temporal_cohort_characterization <- function(cohortsToCreate,
                                           cohort_diagnostics_temporal_characterization(
                                             connectionDetails = connectionDetails,
                                             cdmDatabaseSchema = cdmDatabaseSchema,
-                                            tempEmulationSchema = tempEmulationSchema,
                                             generatedCohort = generatedCohort,
                                             temporalCovariateSettings = temporalCovariateSettings)
                                         )
@@ -550,25 +547,30 @@ tar_temporal_cohort_characterization <- function(cohortsToCreate,
   
 }
 
-
-# tar_cohort_diagnostics <- function(cohortsToCreate,
-#                                    incidenceAnalysisSettings,
-#                                    connectionDetails,
-#                                    active_database = "eunomia",
-#                                    cdmDatabaseSchema = config::get("cdmDatabaseSchema"),
-#                                    vocabularyDatabaseSchema = config::get("vocabularyDatabaseSchema"),
-#                                    databaseId = config::get("databaseName")){
-#   list(
-#     tar_cohort_inclusion_rules(cohortsToCreate = cohortsToCreate,
-#                                connectionDetails = connectionDetails,
-#                                active_database = active_database,
-#                                databaseId = databaseId),
-#     tar_cohort_incidence(cohortsToCreate = cohortsToCreate,
-#                          incidenceAnalysisSettings = incidenceAnalysisSettings,
-#                          connectionDetails = connectionDetails,
-#                          active_database = active_database,
-#                          cdmDatabaseSchema = cdmDatabaseSchema,
-#                          vocabularyDatabaseSchema = vocabularyDatabaseSchema,
-#                          databaseId = databaseId)
-#   )
-# }
+#' This is the target factory for cohort diagnostics
+#'
+#' @param cohortsToCreate a dataframe with the cohorts to create
+#' @param executionSettings An object containing all information of the database connection created from config file
+#' @param incidenceAnalysisSettings a dataframe where each row is a different combination of anlayis
+#' @param temporalCovariateSettings a list of settings for cohort relationship analysis
+#' @export
+tar_cohort_diagnostics <- function(cohortsToCreate,
+                                   executionSettings,
+                                   incidenceAnalysisSettings,
+                                   temporalCovariateSettings){
+  list(
+    tar_cohort_inclusion_rules(cohortsToCreate,
+                               executionSettings),
+    tar_cohort_incidence(cohortsToCreate,
+                         incidenceAnalysisSettings,
+                         executionSettings),
+    tar_cohort_time_series(cohortsToCreate,
+                           executionSettings),
+    tar_cohort_relationship(cohortsToCreate,
+                            temporalCovariateSettings,
+                            executionSettings),
+    tar_temporal_cohort_characterization(cohortsToCreate,
+                                         temporalCovariateSettings,
+                                         executionSettings)
+  )
+}

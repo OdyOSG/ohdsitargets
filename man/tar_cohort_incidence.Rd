@@ -2,7 +2,7 @@
 % Please edit documentation in R/cohort_diagnostics.R
 \name{tar_cohort_incidence}
 \alias{tar_cohort_incidence}
-\title{Create references to inclusion rules analysis per cohort}
+\title{Creates targets of incidence for each cohort in the project}
 \usage{
 tar_cohort_incidence(
   cohortsToCreate,
@@ -18,8 +18,8 @@ tar_cohort_incidence(
 \item{executionSettings}{An object containing all information of the database connection created from config file}
 }
 \value{
-One target for each generated cohort with names cohortInclusionRules_{id}
+One target for each generated cohort with names cohortIncidence_{id}
 }
 \description{
-Creates targets of inclusion rules for each cohort in the project
+Creates targets of incidence for each cohort in the project
 }

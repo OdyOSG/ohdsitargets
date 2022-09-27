@@ -39,7 +39,7 @@ cohortsToCreate <- readr::read_csv("input/cohorts/meta/CohortsToCreate.csv", sho
 #define incidence Analysis
 incidenceAnalysisSettings <- tibble::tibble(firstOccurrenceOnly = TRUE,
                                             washoutPeriod = 365)
-
+temporalCovariateSettings <- define_temporal_covariates()
 
 # Run Targets -----------------------
 
@@ -49,11 +49,9 @@ list(
   #step2: generate cohorts
   tar_cohorts(cohortsToCreate = cohortsToCreate,
              executionSettings = executionSettings),
-  #step 3: analyze inclusion rules for cohorts
-  tar_cohort_inclusion_rules(cohortsToCreate = cohortsToCreate,
-                             executionSettings = executionSettings),
-  #step 4: analyze incidence for cohorts
-  tar_cohort_incidence(cohortsToCreate = cohortsToCreate,
-                       incidenceAnalysisSettings = incidenceAnalysisSettings,
-                       executionSettings = executionSettings)
+  #step 3: Run cohort diagnostics
+  tar_cohort_diagnostics(cohortsToCreate = cohortsToCreate,
+                         executionSettings = executionSettings,
+                         incidenceAnalysisSettings = incidenceAnalysisSettings,
+                         temporalCovariateSettings = temporalCovariateSettings)
 )
