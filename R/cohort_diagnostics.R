@@ -469,83 +469,69 @@ tar_cohort_relationship <- function(cohortsToCreate,
 
 #function
 
-#' Temporal cohort characterization analysis for cohort diagnostics
-#'
-#' @param connectionDetails ConnectionDetails
-#' @param cdmDatabaseSchema (character) Schema where the CDM data lives in the database
-#' @param tempEmulationSchema the temporary table schema used in certain databases
-#' @param generatedCohort dependency object of generated cohort class that tracks cohort used in incidence
-#' analysis
-#' @param temporalCovariateSettings temporal covariate settings used for analysis
-#' @export
-cohort_diagnostics_temporal_characterization <- function(connectionDetails,
-                                                   cdmDatabaseSchema = config::get("cdmDatabaseSchema"),
-                                                   tempEmulationSchema = getOption("sqlRenderTempEmulationSchema"),
-                                                   generatedCohort,
-                                                   temporalCovariateSettings) {
-  
-  cohortDatabaseSchema <- generatedCohort$cohortTableRef$cohortDatabaseSchema
-  cohortTable <- generatedCohort$cohortTableRef$cohortTableNames$cohortTable
-  cohortId <- generatedCohort$cohort_id
-  
-  
-  
-  characteristics <- CohortDiagnostics:::getCohortCharacteristics(
-    connectionDetails = connectionDetails,
-    cdmDatabaseSchema = cdmDatabaseSchema,
-    tempEmulationSchema = tempEmulationSchema,
-    cohortDatabaseSchema = cohortDatabaseSchema,
-    cohortTable = cohortTable,
-    cohortIds = cohortId,
-    covariateSettings = temporalCovariateSettings,
-    cdmVersion = 5L
-  )
-  
-  return(characteristics)
-}
+# cohort_diagnostics_temporal_characterization <- function(connectionDetails,
+#                                                    cdmDatabaseSchema = config::get("cdmDatabaseSchema"),
+#                                                    tempEmulationSchema = getOption("sqlRenderTempEmulationSchema"),
+#                                                    generatedCohort,
+#                                                    temporalCovariateSettings) {
+#   
+#   cohortDatabaseSchema <- generatedCohort$cohortTableRef$cohortDatabaseSchema
+#   cohortTable <- generatedCohort$cohortTableRef$cohortTableNames$cohortTable
+#   cohortId <- generatedCohort$cohort_id
+#   
+#   
+#   
+#   characteristics <- CohortDiagnostics:::getCohortCharacteristics(
+#     connectionDetails = connectionDetails,
+#     cdmDatabaseSchema = cdmDatabaseSchema,
+#     tempEmulationSchema = tempEmulationSchema,
+#     cohortDatabaseSchema = cohortDatabaseSchema,
+#     cohortTable = cohortTable,
+#     cohortIds = cohortId,
+#     covariateSettings = temporalCovariateSettings,
+#     cdmVersion = 5L
+#   )
+#   
+#   return(characteristics)
+# }
 
 
 
 
-#' This is the target factory for the cohort relationships in cohort diagnostics
-#'
-#' @param cohortsToCreate a dataframe with the cohorts to create
-#' @param temporalCovariateSettings a list of settings for cohort relationship analysis
-#' @param executionSettings An object containing all information of the database connection created from config file
-#' @export
-tar_temporal_cohort_characterization <- function(cohortsToCreate,
-                                                 temporalCovariateSettings,
-                                                 executionSettings) {
-  
-  #extract out all execution settings
-  connectionDetails <- executionSettings$connectionDetails
-  cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
-  vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
-  databaseId <- executionSettings$databaseId
-  
-  
-  nn <- 1:nrow(cohortsToCreate)
-  
-  iter <- tibble::tibble('generatedCohort' = rlang::syms(paste("generatedCohort", nn, sep ="_")),
-                         'cohortId' = nn)
-  
-  
-  list(
-    tarchetypes::tar_map(values = iter, 
-                         names = "cohortId",
-                         tar_target_raw("cohortTemporalCharacterization", 
-                                        substitute(
-                                          cohort_diagnostics_temporal_characterization(
-                                            connectionDetails = connectionDetails,
-                                            cdmDatabaseSchema = cdmDatabaseSchema,
-                                            generatedCohort = generatedCohort,
-                                            temporalCovariateSettings = temporalCovariateSettings)
-                                        )
-                         )
-    )
-  )
-  
-}
+
+# tar_temporal_cohort_characterization <- function(cohortsToCreate,
+#                                                  temporalCovariateSettings,
+#                                                  executionSettings) {
+#   
+#   #extract out all execution settings
+#   connectionDetails <- executionSettings$connectionDetails
+#   cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
+#   vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
+#   databaseId <- executionSettings$databaseId
+#   
+#   
+#   nn <- 1:nrow(cohortsToCreate)
+#   
+#   iter <- tibble::tibble('generatedCohort' = rlang::syms(paste("generatedCohort", nn, sep ="_")),
+#                          'cohortId' = nn)
+#   
+#   
+#   list(
+#     tarchetypes::tar_map(values = iter, 
+#                          names = "cohortId",
+#                          tar_target_raw("cohortTemporalCharacterization", 
+#                                         substitute(
+#                                           cohort_diagnostics_temporal_characterization(
+#                                             connectionDetails = connectionDetails,
+#                                             cdmDatabaseSchema = cdmDatabaseSchema,
+#                                             generatedCohort = generatedCohort,
+#                                             temporalCovariateSettings = temporalCovariateSettings)
+#                                         )
+#                          )
+#     )
+#   )
+#   
+# }
 
 #' This is the target factory for cohort diagnostics
 #'
@@ -568,9 +554,9 @@ tar_cohort_diagnostics <- function(cohortsToCreate,
                            executionSettings),
     tar_cohort_relationship(cohortsToCreate,
                             temporalCovariateSettings,
-                            executionSettings),
-    tar_temporal_cohort_characterization(cohortsToCreate,
-                                         temporalCovariateSettings,
-                                         executionSettings)
+                            executionSettings)#,
+    # tar_temporal_cohort_characterization(cohortsToCreate,
+    #                                      temporalCovariateSettings,
+    #                                      executionSettings)
   )
 }

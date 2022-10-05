@@ -1,14 +1,19 @@
 #concept set diagnostics
 
 
-runConceptSetDiagnostics <- function(connectionDetails,
-                                     cdmDatabaseSchema,
-                                     vocabularyDatabaseSchema,
+runConceptSetDiagnostics <- function(executionSettings,
                                      tempEmulationSchema = NULL,
                                      generatedCohorts,
-                                     minCellCount = 5L,
-                                     databaseId,
-                                     studyName) {
+                                     minCellCount = 5L) {
+  
+  connectionDetails <- executionSettings$connectionDetails
+  cdmDatabaseSchema <- executionSettings$cdmDatabaseSchema
+  vocabularyDatabaseSchema <- executionSettings$vocabularyDatabaseSchema
+  cohortDatabaseSchema <- executionSettings$resultsDatabaseSchema
+  cohortTable <- executionSettings$cohortTableName
+  databaseId <- executionSettings$databaseId
+  studyName <- executionSettings$studyName
+  
   
   suppressMessages(connection <- DatabaseConnector::connect(connectionDetails))
   on.exit(DatabaseConnector::disconnect(connection), add = TRUE)
@@ -26,12 +31,15 @@ runConceptSetDiagnostics <- function(connectionDetails,
                                                                           tempEmulationSchema = tempEmulationSchema,
                                                                           minCellCount = 5L,
                                                                           databaseId = databaseId)
+  
   index_event_breakdown <- concept_diagnostics_index_event_breakdown(connection = connection,
                                                                      concept_sets = concept_sets,
                                                                      cdmDatabaseSchema = cdmDatabaseSchema,
+                                                                     cohortDatabaseSchema = cohortDatabaseSchema,
                                                                      tempEmulationSchema = tempEmulationSchema,
                                                                      minCellCount = 5L,
                                                                      databaseId = databaseId)
+  
   orphan_concepts <- concept_diagnostics_orphan_concepts(connection = connection,
                                                          concept_sets = concept_sets,
                                                          cdmDatabaseSchema = cdmDatabaseSchema,
@@ -62,9 +70,11 @@ get_concept_sets <- function(connection,
                                 tempEmulationSchema = NULL,
                                 generatedCohorts) {
   #get concept sets
-  conceptSets <- purrr::map(generatedCohorts, ~.x$cohort_definition) %>%
+  cohorts <- purrr::map(generatedCohorts, ~.x$cohort_definition) %>%
     Capr::createCohortDataframe() %>%
-    dplyr::select(cohortId, cohortName, json, sql) %>%
+    dplyr::select(cohortId, cohortName, json, sql) 
+  
+  conceptSets <- cohorts %>%
     CohortDiagnostics:::combineConceptSetsFromCohorts()
   
   uniqueConceptSets <-
@@ -82,6 +92,7 @@ get_concept_sets <- function(connection,
   )
   
   concept_sets <- list(
+    cohorts = cohorts,
     conceptSets = conceptSets,
     uniqueConceptSets = uniqueConceptSets
   )
@@ -175,16 +186,19 @@ concept_diagnostics_included_source_concepts <- function(connection,
 }
 
 
+
+
 # TODO add cohorts into this function
 concept_diagnostics_index_event_breakdown <- function(connection,
                                                       concept_sets,
                                                       cdmDatabaseSchema,
+                                                      cohortDatabaseSchema,
                                                       vocabularyDatabaseSchmea,
                                                       tempEmulationSchema,
                                                       minCellCount = 5L,
                                                       databaseId) {
 
-  conceptSets <- concept_sets$conceptSets
+  cohorts <- concept_sets$cohorts
   
   domains <-
     readr::read_csv(
@@ -245,6 +259,7 @@ concept_diagnostics_index_event_breakdown <- function(connection,
       )
     primaryCodesetIds <- dplyr::bind_rows(primaryCodesetIds)
     
+    
     getCounts <- function(row) {
       domain <- domains[domains$domain == row$domain, ]
       sql <-
@@ -298,6 +313,7 @@ concept_diagnostics_index_event_breakdown <- function(connection,
       )
       return(counts)
     }
+    
     counts <-
       lapply(split(primaryCodesetIds, 1:nrow(primaryCodesetIds)), getCounts) %>%
       dplyr::bind_rows() %>%
@@ -314,6 +330,8 @@ concept_diagnostics_index_event_breakdown <- function(connection,
     }
     return(counts)
   }
+  
+  
   data <-
     lapply(
       split(cohorts, cohorts$cohortId),
